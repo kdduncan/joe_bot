@@ -1,0 +1,66 @@
+Columns:
+- joe_issue_ID
+- jp_id
+- jp_section
+- jp_institution
+- jp_division
+- jp_department
+- jp_keywords
+- jp_title
+- jp_full_text
+- jp_salary_range
+- jp_agency_insertion_num
+- locations
+- JEL_Classifications
+- Application_deadline
+- Date_Active
+
+First row sample:
+joe_issue_ID: 2025-02
+jp_id: 111476988
+jp_section: International: Full-Time Academic (Permanent, Tenure Track or Tenured)
+jp_institution: Aalborg Univeristy
+jp_division: Time Series Analysis and Econometrics 
+jp_department: Department of Mathematical Sciences
+jp_keywords: Econometrics
+Machine learning 
+Statistics for high-dimensional data
+Stochastic volatility models
+Time Series modeling in continuous and discrete time
+Time series analysis
+jp_title:  Full Professor and Associate Professor 
+jp_full_text: Department of Mathematical Sciences, Aalborg University invites applications for full and associate professorship positions in Econometrics and Time Series.
+
+The starting date is 01.05.2026 or as agreed upon.
+
+The successful candidates will join the Group for Research in Econometrics and Time Series.
+
+Job description
+We are looking for candidates who can strengthen our research profile. A significant part of our work involves collaboration with business partners and other Danish and international university departments, and we carry out applied and theoretical research. 
+
+Research topics relevant to the position
+
+o	Nonparametric estimation
+o	Machine learning methods in econometrics and time series analysis.
+o	Statistics for high-dimensional data.
+o	Stochastic volatility models.
+o	Time Series modeling in continuous and discrete time
+
+Candidates are expected to teach and supervise students at all levels, including PhD students. Our study programme portfolio in mathematics-economics consists of a Masters degree and a Bachelor’s degree. Teaching will primarily take place within these programmes, although teaching in our engineering programmes may also become relevant. 
+
+Aalborg is a lively city in Northern Europe with a wide variety of music and cultural events.
+
+Deadline 15.01.2026
+
+Read the full job description and apply: 
+https://www.stillinger.aau.dk/videnskabelige-stillinger/vis-stilling/vacancyId/877856
+
+jp_salary_range: nan
+jp_agency_insertion_num: 201427
+locations: DENMARK Aalborg
+JEL_Classifications: C1 - Econometric and Statistical Methods and Methodology:  General
+C0 - General
+Application_deadline: 2026-01-15 00:00:00
+Date_Active: 2025-11-26 00:00:00
+
+Total columns: 15
