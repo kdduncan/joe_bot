@@ -8,6 +8,8 @@ from summary_agent import SummaryAgent
 from fetcher_agent import FetcherAgent
 from visualization_agent import VisualizationAgent
 from database import SQLJobDatabase
+from config import Config
+from sql_agent import SQLAgent # New Pete!
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -24,14 +26,27 @@ class AgentOrchestrator:
             database: The loaded job database
         """
         self.database = database
-        self.summary_agent = SummaryAgent()
-        self.fetcher_agent = FetcherAgent(database)
-        self.visualization_agent = VisualizationAgent()
-        self.enabled = self.summary_agent.enabled
+        self.db = database
+        self.client = None
+        self.enabled = Config.USE_AGENT_MODE and bool(Config.OPENROUTER_API_KEY)
         
         if self.enabled:
+            # Initialize Agents
+            self.fetcher_agent = FetcherAgent(database) # Keeping for legacy/backup if needed? Or remove?
+            # Actually, let's keep fetcher as "Legacy Pete" if we want, but user wants True Pete.
+            # We will use SQLAgent as the primary data tool.
+            self.sql_agent = SQLAgent(database)
+            self.visualization_agent = VisualizationAgent()
+            self.summary_agent = SummaryAgent() # Fixed: No args in init
+            
             logger.info("AgentOrchestrator initialized (agent mode enabled with visualization)")
         else:
+            # Initialize agents even if disabled, but they won't be used.
+            # This prevents AttributeError if trying to access them later.
+            self.fetcher_agent = FetcherAgent(database)
+            self.sql_agent = SQLAgent(database)
+            self.visualization_agent = VisualizationAgent()
+            self.summary_agent = SummaryAgent()
             logger.info("AgentOrchestrator initialized (agent mode disabled - will use fallback)")
     
     
@@ -54,24 +69,23 @@ class AgentOrchestrator:
         
         try:
             # Get tool definitions
-            # fetcher_agent returns a list (may contain multiple tools)
-            # visualization_agent returns a single dict (for now)
-            fetcher_tools = self.fetcher_agent.get_tool_definition()
+            # Pete's tools (now a list):
+            pete_tools = self.sql_agent.get_tool_definition()
             viz_tool = self.visualization_agent.get_tool_definition()
             
             tools = []
-            if isinstance(fetcher_tools, list):
-                tools.extend(fetcher_tools)
+            if isinstance(pete_tools, list):
+                tools.extend(pete_tools)
             else:
-                tools.append(fetcher_tools)
+                tools.append(pete_tools)
                 
             tools.append(viz_tool)
             
             # Create callbacks for tools
             tool_callbacks = {
-                'fetch_job_data': self.fetcher_agent.fetch_data,
-                'create_chart': self.visualization_agent.create_chart,
-                'get_last_sql': self.fetcher_agent.get_last_sql
+                'ask_pete': self.sql_agent.ask_pete,
+                'get_last_sql': self.sql_agent.get_last_sql,
+                'create_chart': self.visualization_agent.create_chart
             }
             
             # Process with Summary Agent using both tools

@@ -150,8 +150,27 @@ class SQLJobDatabase:
         finally:
             conn.close()
 
+    def get_schema_string(self) -> str:
+        """Get database schema as a string for LLM context."""
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='jobs'")
+            result = cursor.fetchone()
+            if result:
+                return result[0]
+            return "Table 'jobs' not found."
+        except Exception as e:
+            logger.error(f"Error getting schema: {e}")
+            return "Error retrieving schema."
+        finally:
+            conn.close()
+
     def execute_raw_query(self, query: str, params: tuple = ()) -> List[Dict[str, Any]]:
         """Execute raw SQL query and return dicts (good for aggregations)."""
+        # Capture for debug
+        self.last_query = self._format_query_with_params(query, params)
+        
         conn = self.get_connection()
         try:
             cursor = conn.cursor()

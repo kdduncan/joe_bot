@@ -66,34 +66,31 @@ class SummaryAgent:
         try:
             # Enhanced system prompt with visualization capabilities
             # Enhanced system prompt with personality
-            system_prompt = """You are Joe, an enthusiastic and insightful Job Market Analyst. You love digging into academic job market data to find interesting trends and insights.
+            # Enhanced system prompt with visualization capabilities
+            # Enhanced system prompt with personality
+            system_prompt = """You are John Cawley, a Professor of Economics at Cornell University.
+- **Tone**: Professional, academic, and factual.
+- **Style**: Disseminate results clearly and concisely. Avoid "fluff" or excessive enthusiasm.
+- **Formatting**: Do NOT bold numbers. Use standard punctuation.
+- **Goal**: Inform the user about the job market based on the data.
 
-Personality:
-- Enthusiastic and curious about the data
-- Professional yet conversational and friendly
-- Insightful: Don't just give numbers, explain what they might mean
-- Helpful: concise but willing to go deeper if the data is interesting
+You work with "Pete", an autonomous **SQL Agent** (your pre-doctoral research assistant).
+- **MANDATORY**: For any question requiring data (counts, jobs, locations, etc.), you MUST call `ask_pete`.
+- Please call `ask_pete` immediately when you identify a data question.
+- **MANDATORY**: If the user asks for a graph, chart, or plot, you MUST call `create_chart` after you have the data (or if you already have it).
+- **CRITICAL**: Do NOT include the SQL query in your initial response unless the user explicitly asks for technical details.
+- Instead, focus on the insights and the data numbers.y?" or "Show SQL", THEN call `get_last_sql` and display it.
+- Pete is "direct and clear" and adheres to high ethical standards (he never hallucinates data).
 
 Your capabilities:
-- Fetch job posting data using the fetch_job_data tool
-- Create visualizations (charts/graphs) using the create_chart tool
+- Query the database by calling `ask_pete(question="...")`
+- Retrieve the code for the last query with `get_last_sql()`
+- Create visualizations (charts/graphs) using the `create_chart` tool
 - Provide insights, trends, and context about the job market
-
-When users ask for:
-- Numbers/counts: Use fetch_job_data
-- Trends/graphs/charts/visualizations: Use both fetch_job_data AND create_chart
-- Comparisons over time: Create line charts
-- Distributions: Create bar charts or pie charts
-- Multi-year comparisons: Create comparison charts
 
 IMPORTANT: 
 - When you create a chart, the system will handle displaying it. You do NOT need to print the file path or JSON.
 - Just describe the chart and what it shows in your summary.
-
-Style:
-- Limit the use of emojis
-- bold key numbers
-- "Let's look at the numbers..." or "Here's what I found..."
 
 CRITICAL: Do NOT output raw tool calls, JSON, or code blocks in your final response. Only provide the natural language summary.
 """
@@ -115,7 +112,8 @@ CRITICAL: Do NOT output raw tool calls, JSON, or code blocks in your final respo
             
             # First call to kick off the loop
             # Max iterations to prevent infinite loops
-            max_iterations = 5
+            # Increased to 10 for complex queries (e.g. multi-step data + graph)
+            max_iterations = 10
             iteration = 0
             
             while iteration < max_iterations:
@@ -132,6 +130,9 @@ CRITICAL: Do NOT output raw tool calls, JSON, or code blocks in your final respo
                 assistant_message = response.choices[0].message
                 messages.append(assistant_message)
                 
+                # Log raw message for debugging
+                logger.info(f"Raw Assistant Message: Content={assistant_message.content}, ToolCalls={assistant_message.tool_calls}")
+
                 # Check if agent called tools
                 if assistant_message.tool_calls:
                     # Execute tool call(s)
@@ -147,8 +148,13 @@ CRITICAL: Do NOT output raw tool calls, JSON, or code blocks in your final respo
                             try:
                                 function_args, _ = json.JSONDecoder().raw_decode(args_content)
                             except:
-                                function_args = {}
-                                logger.error("Failed to recover JSON arguments")
+                                # Attempt adding missing braces (common LLM error)
+                                try:
+                                    function_args = json.loads("{" + args_content + "}")
+                                    logger.info("Fixed malformed JSON by adding braces")
+                                except:
+                                    function_args = {}
+                                    logger.error("Failed to recover JSON arguments")
                         
                         logger.info(f"Agent calling tool: {function_name} with args: {function_args}")
                         
@@ -178,14 +184,36 @@ CRITICAL: Do NOT output raw tool calls, JSON, or code blocks in your final respo
                     summary = assistant_message.content
                     if not summary:
                         # Fallback: Check if we just executed a tool and got no commentary
-                        if len(messages) >= 2 and messages[-2].get('role') == 'tool':
-                            # Show the raw tool output (truncated to prevent overflow if massive)
-                            raw_output = messages[-2].get('content', '')
-                            summary = f"Action completed. Raw result: {raw_output[:2000]}"
-                            if len(raw_output) > 2000: summary += "..."
+                        # messages[-1] is assistant_message (object), messages[-2] is tool result (dict)
+                        # We need to make sure we access messages[-2] safely
+                        if len(messages) >= 2:
+                            last_msg = messages[-2]
+                            if isinstance(last_msg, dict) and last_msg.get('role') == 'tool':
+                                # Show the raw tool output (truncated to prevent overflow if massive)
+                                raw_output = last_msg.get('content', '')
+                                
+                                # Smart formatting: Check if it's SQL
+                                is_sql = False
+                                try:
+                                    data = json.loads(raw_output)
+                                    if isinstance(data, dict) and 'sql' in data:
+                                        summary = f"**Pete's Analysis (SQL Query):**\n```sql\n{data['sql']}\n```"
+                                        is_sql = True
+                                except:
+                                    pass
+                                    
+                                if not is_sql:
+                                    summary = f"Action completed. Raw result: {raw_output[:2000]}"
+                                    if len(raw_output) > 2000: summary += "..."
+                            else:
+                                summary = f"I processed the query but have no response. (Debug: Tool Result Invalid, Role={last_msg.get('role')})"
                         else:
-                            summary = "I processed the query but have no response."
+                            summary = f"I processed the query but have no response. (Debug: No Tool Calls, History={len(messages)})"
                     logger.info(f"Agent generated summary with {len(generated_charts)} charts")
+                    
+                    # Clean the summary of common artifacts
+                    if summary:
+                        summary = self._clean_response_text(summary)
                     
                     # Update conversation history
                     if conversation_id:
@@ -204,6 +232,29 @@ CRITICAL: Do NOT output raw tool calls, JSON, or code blocks in your final respo
                         "content": summary,
                         "charts": generated_charts
                     }
+
+    def _clean_response_text(self, text: str) -> str:
+        """Remove common artifacts from LLM response."""
+        if not text:
+            return ""
+            
+        # Common prefixes to strip
+        prefixes = [
+            "summary:", "summary.", "response:", "answer:", 
+            "to answer:", "to answer.", "result:"
+        ]
+        
+        cleaned = text.strip()
+        
+        # Check for prefixes case-insensitively
+        lower_text = cleaned.lower()
+        for prefix in prefixes:
+            if lower_text.startswith(prefix):
+                # Remove prefix and leading whitespace
+                cleaned = cleaned[len(prefix):].strip()
+                break # Only remove one prefix
+                
+        return cleaned
             
             # If we hit max iterations
             return {
