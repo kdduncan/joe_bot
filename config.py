@@ -21,7 +21,7 @@ class Config:
     
     # Agent Mode Configuration (default: enabled)
     USE_AGENT_MODE = os.getenv('USE_AGENT_MODE', 'true').lower() == 'true'
-    AGENT_MODEL = os.getenv('AGENT_MODEL', 'qwen/qwen-2.5-72b-instruct')
+    AGENT_MODEL = os.getenv('AGENT_MODEL', 'openai/gpt-oss-120b')
     
     # Bot Settings
     BOT_PREFIX = '@'  # Mention-based, not needed but kept for reference

@@ -77,10 +77,10 @@ class SummaryAgent:
 You work with "Pete", an autonomous **SQL Agent** (your pre-doctoral research assistant).
 - **MANDATORY**: For any question requiring data (counts, jobs, locations, etc.), you MUST call `ask_pete`.
 - Please call `ask_pete` immediately when you identify a data question.
-- **MANDATORY**: If the user asks for a graph, chart, or plot, you MUST call `create_chart` after you have the data (or if you already have it).
-- **CRITICAL**: Do NOT include the SQL query in your initial response unless the user explicitly asks for technical details.
-- Instead, focus on the insights and the data numbers.y?" or "Show SQL", THEN call `get_last_sql` and display it.
-- Pete is "direct and clear" and adheres to high ethical standards (he never hallucinates data).
+- **MANDATORY**: If the user asks for a graph, chart, or plot, you MUST call `create_chart` after you have the data.
+- **CRITICAL**: Do NOT include the SQL query in your response unless the user explicitly asks.
+- If the user asks "What was the query?" or "Show SQL", THEN call `get_last_sql` and display it.
+- Pete adheres to high ethical standards (he never hallucinates data).
 
 Your capabilities:
 - Query the database by calling `ask_pete(question="...")`
@@ -89,7 +89,7 @@ Your capabilities:
 - Provide insights, trends, and context about the job market
 
 IMPORTANT: 
-- When you create a chart, the system will handle displaying it. You do NOT need to print the file path or JSON.
+- When you create a chart, the system will handle displaying it. You do NOT need to print the file path.
 - Just describe the chart and what it shows in your summary.
 
 CRITICAL: Do NOT output raw tool calls, JSON, or code blocks in your final response. Only provide the natural language summary.
@@ -119,19 +119,38 @@ CRITICAL: Do NOT output raw tool calls, JSON, or code blocks in your final respo
             while iteration < max_iterations:
                 iteration += 1
                 
-                response = self.client.chat.completions.create(
-                    model=self.model,
-                    messages=messages,
-                    tools=tools,
-                    tool_choice="auto",
-                    temperature=0.3
-                )
+                # On first iteration, force any tool use to prevent model "stage fright"
+                # After that, allow auto for flexibility (e.g., to respond with text)
+                if iteration == 1:
+                    current_tool_choice = "required"  # Force ANY tool call
+                else:
+                    current_tool_choice = "auto"
+                
+                logger.info(f"Iteration {iteration}: tool_choice={current_tool_choice}, tools_count={len(tools) if tools else 0}")
+                if tools:
+                    tool_names = [t['function']['name'] for t in tools if 'function' in t]
+                    logger.info(f"Available tools: {tool_names}")
+                
+                try:
+                    response = self.client.chat.completions.create(
+                        model=self.model,
+                        messages=messages,
+                        tools=tools,
+                        tool_choice=current_tool_choice,
+                        temperature=0.3
+                    )
+                except Exception as api_error:
+                    logger.error(f"API call failed: {api_error}")
+                    return {
+                        "content": f"Error calling AI model: {str(api_error)}",
+                        "charts": []
+                    }
                 
                 assistant_message = response.choices[0].message
                 messages.append(assistant_message)
                 
                 # Log raw message for debugging
-                logger.info(f"Raw Assistant Message: Content={assistant_message.content}, ToolCalls={assistant_message.tool_calls}")
+                logger.info(f"Raw Assistant Message: Content='{assistant_message.content}', ToolCalls={assistant_message.tool_calls}")
 
                 # Check if agent called tools
                 if assistant_message.tool_calls:
@@ -192,21 +211,41 @@ CRITICAL: Do NOT output raw tool calls, JSON, or code blocks in your final respo
                                 # Show the raw tool output (truncated to prevent overflow if massive)
                                 raw_output = last_msg.get('content', '')
                                 
-                                # Smart formatting: Check if it's SQL
-                                is_sql = False
+                                # Smart formatting: Parse and summarize data
                                 try:
                                     data = json.loads(raw_output)
-                                    if isinstance(data, dict) and 'sql' in data:
-                                        summary = f"**Pete's Analysis (SQL Query):**\n```sql\n{data['sql']}\n```"
-                                        is_sql = True
+                                    if isinstance(data, dict):
+                                        if 'error' in data:
+                                            summary = f"I encountered an error: {data['error']}"
+                                        elif 'data' in data and 'sql' in data:
+                                            # Pete returned data - create a proper summary
+                                            rows = data.get('data', [])
+                                            row_count = data.get('row_count', len(rows))
+                                            
+                                            if row_count == 0:
+                                                summary = "The query returned no results."
+                                            elif row_count == 1 and len(rows[0]) == 1:
+                                                # Single value (e.g., COUNT(*))
+                                                val = list(rows[0].values())[0]
+                                                summary = f"The result is: {val}"
+                                            else:
+                                                # Multiple rows - format as table-like
+                                                lines = [f"Found {row_count} result(s):"]
+                                                for i, row in enumerate(rows[:10]):  # Limit to 10
+                                                    row_str = ", ".join(f"{k}: {v}" for k, v in row.items())
+                                                    lines.append(f"• {row_str}")
+                                                if row_count > 10:
+                                                    lines.append(f"... and {row_count - 10} more")
+                                                summary = "\n".join(lines)
+                                        elif 'sql' in data:
+                                            summary = f"Query executed successfully."
+                                        else:
+                                            summary = f"Action completed. Result: {str(data)[:500]}"
                                 except:
-                                    pass
-                                    
-                                if not is_sql:
                                     summary = f"Action completed. Raw result: {raw_output[:2000]}"
                                     if len(raw_output) > 2000: summary += "..."
                             else:
-                                summary = f"I processed the query but have no response. (Debug: Tool Result Invalid, Role={last_msg.get('role')})"
+                                summary = f"I processed the query but have no response. (Debug: Tool Result Invalid, Role={last_msg.get('role') if isinstance(last_msg, dict) else type(last_msg).__name__})"
                         else:
                             summary = f"I processed the query but have no response. (Debug: No Tool Calls, History={len(messages)})"
                     logger.info(f"Agent generated summary with {len(generated_charts)} charts")
@@ -232,6 +271,19 @@ CRITICAL: Do NOT output raw tool calls, JSON, or code blocks in your final respo
                         "content": summary,
                         "charts": generated_charts
                     }
+            
+            # If we hit max iterations
+            return {
+                "content": "I apologize, but I needed too many steps to process this request.",
+                "charts": generated_charts
+            }
+            
+        except Exception as e:
+            logger.error(f"Error in SummaryAgent processing: {e}")
+            return {
+                "content": f"Error processing query: {str(e)}",
+                "charts": []
+            }
 
     def _clean_response_text(self, text: str) -> str:
         """Remove common artifacts from LLM response."""
@@ -255,19 +307,6 @@ CRITICAL: Do NOT output raw tool calls, JSON, or code blocks in your final respo
                 break # Only remove one prefix
                 
         return cleaned
-            
-            # If we hit max iterations
-            return {
-                "content": "I apologize, but I needed too many steps to process this request.",
-                "charts": generated_charts
-            }
-            
-        except Exception as e:
-            logger.error(f"Error in SummaryAgent processing: {e}")
-            return {
-                "content": f"Error processing query: {str(e)}",
-                "charts": []
-            }
     
     def process_simple(self, user_query: str, result_data: Dict[str, Any]) -> str:
         """
