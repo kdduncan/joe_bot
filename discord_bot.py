@@ -69,7 +69,19 @@ class JobBoardBot(commands.Bot):
                 logger.error("Invalid ALLOWED_CHANNEL_ID configuration")
         
         # Check if bot is mentioned
-        if self.user in message.mentions:
+        is_mention = self.user in message.mentions
+        
+        # Check if this is a reply to the bot's message
+        is_reply_to_bot = False
+        if message.reference and message.reference.message_id:
+            try:
+                replied_to = await message.channel.fetch_message(message.reference.message_id)
+                if replied_to.author == self.user:
+                    is_reply_to_bot = True
+            except:
+                pass
+        
+        if is_mention or is_reply_to_bot:
             await self.handle_query(message)
         
         # Process commands (if any are added later)
