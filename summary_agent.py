@@ -287,16 +287,31 @@ CRITICAL: Do NOT output raw tool calls, JSON, or code blocks in your final respo
 
     def _clean_response_text(self, text: str) -> str:
         """Remove common artifacts from LLM response."""
+        import re
+        
         if not text:
             return ""
             
+        cleaned = text.strip()
+        
+        # Remove LLM "thinking out loud" patterns at the start
+        # Pattern: "We need to query: ..." or "Now call ask_pete..." followed by actual content
+        thinking_patterns = [
+            r'^We need to query[^.]*\.?\s*Now call [^.]+\.\s*',  # "We need to query: ... Now call ask_pete(...)"
+            r'^We need to[^.]*\.\s*',  # "We need to ..."
+            r'^Now call [^.]+\.\s*',   # "Now call ask_pete(...)"
+            r'^Let me [^.]+\.\s*',     # "Let me query..."
+            r'^I will [^.]+\.\s*',     # "I will ask Pete..."
+        ]
+        
+        for pattern in thinking_patterns:
+            cleaned = re.sub(pattern, '', cleaned, flags=re.IGNORECASE)
+        
         # Common prefixes to strip
         prefixes = [
             "summary:", "summary.", "response:", "answer:", 
             "to answer:", "to answer.", "result:"
         ]
-        
-        cleaned = text.strip()
         
         # Check for prefixes case-insensitively
         lower_text = cleaned.lower()
