@@ -1,0 +1,11 @@
+name: joe-bot
+services: []
+workers:
+  - name: joe-bot
+    github:
+      branch: main
+      deploy_on_push: true
+    run_command: python discord_bot.py
+    environment_slug: python
+    instance_count: 1
+    instance_size_slug: apps-s-1vcpu-0.5gb
