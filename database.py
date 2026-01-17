@@ -178,3 +178,56 @@ class SQLJobDatabase:
             return [dict(row) for row in cursor.fetchall()]
         finally:
             conn.close()
+
+    def job_exists(self, job_id: str) -> bool:
+        """Check if a job with this ID already exists."""
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT 1 FROM jobs WHERE id = ?", (job_id,))
+            return cursor.fetchone() is not None
+        finally:
+            conn.close()
+
+    def get_existing_job_ids(self) -> set:
+        """Get all existing job IDs for bulk duplicate checking."""
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT id FROM jobs")
+            return {row[0] for row in cursor.fetchall()}
+        finally:
+            conn.close()
+
+    def bulk_insert_jobs(self, jobs: List[Dict]) -> int:
+        """
+        Insert multiple jobs into the database.
+        
+        Args:
+            jobs: List of job record dictionaries
+            
+        Returns:
+            Number of records inserted
+        """
+        if not jobs:
+            return 0
+            
+        conn = self.get_connection()
+        try:
+            cursor = conn.cursor()
+            query = """
+                INSERT OR REPLACE INTO jobs (
+                    id, title, institution, department, division, section, 
+                    location, description, salary_range, keywords, 
+                    deadline, date_active, year, source_file, jel_classification
+                ) VALUES (
+                    :id, :title, :institution, :department, :division, :section, 
+                    :location, :description, :salary_range, :keywords, 
+                    :deadline, :date_active, :year, :source_file, :jel_classification
+                )
+            """
+            cursor.executemany(query, jobs)
+            conn.commit()
+            return cursor.rowcount
+        finally:
+            conn.close()

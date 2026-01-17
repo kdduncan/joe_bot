@@ -1,12 +1,17 @@
 """Discord bot implementation for job board queries."""
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 import logging
+import datetime
 from typing import Optional
+
+import pytz
+
 from query_engine import QueryEngine
 from database import SQLJobDatabase
 from utils import create_embed, create_error_embed, create_stats_embed, create_results_embed
 from config import Config
+from joe_data_fetcher import JOEDataFetcher
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -32,6 +37,12 @@ class JobBoardBot(commands.Bot):
         self.database = database
         self.query_engine = QueryEngine(database)
         
+        # Initialize data fetcher for scheduled updates
+        self.data_fetcher = JOEDataFetcher(
+            database, 
+            xls_url=Config.JOE_XLS_URL
+        )
+        
         logger.info("JobBoardBot initialized")
     
     async def on_ready(self):
@@ -40,6 +51,11 @@ class JobBoardBot(commands.Bot):
         logger.info(f'Bot is ready and connected to {len(self.guilds)} server(s)')
         logger.info('------')
         
+        # Start scheduled tasks
+        if Config.DATA_UPDATE_ENABLED and not self.daily_update.is_running():
+            self.daily_update.start()
+            logger.info(f"Daily update task started (scheduled for {Config.DATA_UPDATE_HOUR}:00 {Config.DATA_UPDATE_TIMEZONE})")
+        
         # Set bot status
         await self.change_presence(
             activity=discord.Activity(
@@ -47,6 +63,38 @@ class JobBoardBot(commands.Bot):
                 name="@mention me with queries!"
             )
         )
+    
+    @tasks.loop(time=datetime.time(
+        hour=8,  # Default, will be overridden in cog_load
+        minute=0,
+        tzinfo=pytz.timezone('America/New_York')
+    ))
+    async def daily_update(self):
+        """Run daily data update to fetch new JOE listings."""
+        logger.info("Starting daily JOE listings update...")
+        try:
+            result = await self.data_fetcher.run_daily_update()
+            if result['success']:
+                logger.info(f"Daily update complete: {result['new_count']} new listings added")
+            else:
+                logger.error(f"Daily update failed: {result.get('error', 'Unknown error')}")
+        except Exception as e:
+            logger.error(f"Daily update error: {e}", exc_info=True)
+    
+    @daily_update.before_loop
+    async def before_daily_update(self):
+        """Wait until the bot is ready before starting the task."""
+        await self.wait_until_ready()
+        
+        # Reconfigure task time based on config
+        tz = pytz.timezone(Config.DATA_UPDATE_TIMEZONE)
+        update_time = datetime.time(
+            hour=Config.DATA_UPDATE_HOUR,
+            minute=0,
+            tzinfo=tz
+        )
+        self.daily_update.change_interval(time=update_time)
+        logger.info(f"Daily update configured for {update_time}")
     
     async def on_message(self, message: discord.Message):
         """

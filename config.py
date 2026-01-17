@@ -31,6 +31,12 @@ class Config:
     # Query Settings
     QUERY_TIMEOUT = 30  # Maximum seconds to process a query
     
+    # Data Update Configuration
+    DATA_UPDATE_ENABLED = os.getenv('DATA_UPDATE_ENABLED', 'true').lower() == 'true'
+    DATA_UPDATE_HOUR = int(os.getenv('DATA_UPDATE_HOUR', '8'))
+    DATA_UPDATE_TIMEZONE = os.getenv('DATA_UPDATE_TIMEZONE', 'America/New_York')
+    JOE_XLS_URL = os.getenv('JOE_XLS_URL', 'https://www.aeaweb.org/joe/listings?format=xls')
+    
     @classmethod
     def validate(cls):
         """Validate that required configuration is present."""
