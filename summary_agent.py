@@ -294,6 +294,21 @@ CRITICAL: Do NOT output raw tool calls, JSON, or code blocks in your final respo
             
         cleaned = text.strip()
         
+        # Detect and remove raw JSON tool call syntax that leaked into content
+        # This happens when model outputs tool calls as text instead of using tool_calls
+        # Pattern: JSON array/object containing "name": and "parameters":
+        json_tool_call_pattern = r'^\s*\[\s*\{[^}]*"name"\s*:\s*"[^"]+"\s*,\s*"parameters"\s*:'
+        if re.search(json_tool_call_pattern, cleaned, re.DOTALL):
+            # The entire response is leaked JSON tool calls - return fallback
+            logger.warning("Detected leaked JSON tool call syntax in response, using fallback")
+            return "I've processed your request. The visualization has been created."
+        
+        # Also check for single object tool call format
+        single_json_pattern = r'^\s*\{[^}]*"name"\s*:\s*"(create_chart|ask_pete|get_last_sql)"'
+        if re.search(single_json_pattern, cleaned, re.DOTALL):
+            logger.warning("Detected leaked single JSON tool call in response, using fallback")
+            return "I've processed your request."
+        
         # Remove LLM "thinking out loud" patterns at the start
         # Pattern: "We need to query: ..." or "Now call ask_pete..." followed by actual content
         thinking_patterns = [
